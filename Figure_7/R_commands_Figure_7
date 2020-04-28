@@ -1,0 +1,36 @@
+data=read.csv('Data_for_Figure_7.csv',header=T)
+x_range=range(data$Time)
+y_range=range(pretty(range(data$Percent_cleaved)))
+nucleotide=c('A','U','A6','G')
+color=c('blue','orangered','grey','orange')
+
+pdf('Plot_Fig7D.pdf',width=8,height=6)
+plot(1,1,xlim=x_range,ylim=y_range,xlab='Time (min)',ylab='% target cleaved',type='n')
+for (nt in 1:length(nucleotide))
+{
+par(new=T)
+plot(data$Time[data$Nucleotide==nucleotide[nt]],data$Percent_cleaved[data$Nucleotide==nucleotide[nt]],xlim=x_range,ylim=y_range,xlab='',ylab='',col=color[nt],axes=F)
+m=c()
+for (t in unique(data$Time))
+m=append(m,mean(data$Percent_cleaved[data$Nucleotide==nucleotide[nt] & data$Time==t]))
+par(new=T)
+plot(unique(data$Time),m,xlim=x_range,ylim=y_range,xlab='',ylab='',col=color[nt],axes=F,ty='l',lwd=2)
+}
+legend('topleft',nucleotide,col=color,pch='-',lwd=2)
+dev.off()
+
+### Analysis of cleaved fragment accumulation (simplified as: [fragment] = A*(1-2^(-t/tau)) with t: time (expressed in minutes) and tau=10 min (according to the aspect of the curves)
+variable=1-2^(-data$Time/10)
+a=aov(data$Percent_cleaved~data$Nucleotide+variable)
+summary(a) # No significant effect of nucleotide identity, so it is pointless to look for an interaction with time, or to perform pairwise tests
+
+# Applicability of ANOVA:
+library(car)
+leveneTest(data$Percent_cleaved~data$Nucleotide*as.factor(data$Time)) # Variances appear to be homogeneous
+shapiro.test(residuals(a)) # Residuals appear to be normally distributed
+verification_desc=c('Levene test on untransformed data','Shapiro-Wilk test on residuals from untransformed data')
+verification_pval=c(signif(leveneTest(data$Percent_cleaved~data$Nucleotide*as.factor(data$Time))$Pr[1],digits=3),signif(shapiro.test(residuals(a))$p.value,digits=3))
+verification=list(verification_desc,verification_pval)
+names(verification)=c('Statistical test','p-value')
+write.csv(as.data.frame(verification),'ANOVA_applicability_verification_Figure_7.csv')
+
