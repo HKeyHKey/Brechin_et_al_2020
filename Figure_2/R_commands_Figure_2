@@ -1,0 +1,114 @@
+library(car)
+
+data=read.csv('Kinetics.csv')
+
+x_range=range(data$Time)
+y_range=range(pretty(range(data$Mature_RISC)))
+nucleotide=c('A','U','A6','G')
+color=c('blue','orangered','grey','orange')
+
+pdf('Mature_RISC_accumulation.pdf',width=8,height=6)
+plot(1,1,xlim=x_range,ylim=y_range,xlab='Time (min)',ylab='Mature RISC abundance (A.U.)',type='n')
+for (nt in 1:length(nucleotide))
+{
+par(new=T)
+plot(data$Time[data$Nucleotide==nucleotide[nt]],data$Mature_RISC[data$Nucleotide==nucleotide[nt]],xlim=x_range,ylim=y_range,xlab='',ylab='',col=color[nt],axes=F)
+m=c()
+for (t in unique(data$Time))
+m=append(m,mean(data$Mature_RISC[data$Nucleotide==nucleotide[nt] & data$Time==t]))
+par(new=T)
+plot(unique(data$Time),m,xlim=x_range,ylim=y_range,xlab='',ylab='',col=color[nt],axes=F,ty='l',lwd=2)
+}
+legend('topleft',nucleotide,col=color,pch='-',lwd=2)
+dev.off()
+
+y_range=range(pretty(range(data$Pre_RISC)))
+pdf('Pre_RISC_decrease.pdf',width=8,height=6)
+plot(1,1,xlim=x_range,ylim=y_range,xlab='Time (min)',ylab='Pre-RISC abundance (A.U.)',type='n')
+for (nt in 1:length(nucleotide))
+{
+par(new=T)
+plot(data$Time[data$Nucleotide==nucleotide[nt]],data$Pre_RISC[data$Nucleotide==nucleotide[nt]],xlim=x_range,ylim=y_range,xlab='',ylab='',col=color[nt],axes=F)
+m=c()
+for (t in unique(data$Time))
+m=append(m,mean(data$Pre_RISC[data$Nucleotide==nucleotide[nt] & data$Time==t]))
+par(new=T)
+plot(unique(data$Time),m,xlim=x_range,ylim=y_range,xlab='',ylab='',col=color[nt],axes=F,ty='l',lwd=2)
+}
+legend('topright',nucleotide,col=color,pch='-',lwd=2)
+dev.off()
+
+### Analysis of mature RISC accumulation kinetics (simplified as : [mature RISC] = A*(1-2^(-t/tau)) with t: time (expressed in minutes) and tau=50 min (according to the aspect of the curves)
+variable=1-2^(-data$Time/50)
+a=aov(data$Mature_RISC~data$Nucleotide+variable)
+summary(a)
+b=aov(data$Mature_RISC~data$Nucleotide*variable)
+summary(b) # Conclusion: there is an interaction term between Nucleotide and Time
+# Applicability of ANOVA:
+leveneTest(data$Mature_RISC~data$Nucleotide*as.factor(data$Time)) # Variances appear to be homogeneous
+shapiro.test(residuals(b)) # Residuals appear to be normally distributed
+verification_desc=c('Levene test on untransformed data','Shapiro-Wilk test on residuals from untransformed data')
+verification_pval=c(signif(leveneTest(data$Mature_RISC~data$Nucleotide*as.factor(data$Time))$Pr[1],digits=3),signif(shapiro.test(residuals(b))$p.value,digits=3))
+verification=list(verification_desc,verification_pval)
+names(verification)=c('Statistical test','p-value')
+write.csv(as.data.frame(verification),'ANOVA_applicability_verification_Figure_2_mature_RISC.csv')
+
+# Pairwise tests:
+desc=c();pval_nt_identity=c();pval_interaction=c()
+for (nt1 in 1:(length(nucleotide)-1))
+{
+for (nt2 in (nt1+1):length(nucleotide))
+{
+y=data$Mature_RISC[data$Nucleotide==nucleotide[nt1] | data$Nucleotide==nucleotide[nt2]]
+nt=data$Nucleotide[data$Nucleotide==nucleotide[nt1] | data$Nucleotide==nucleotide[nt2]]
+t=variable[data$Nucleotide==nucleotide[nt1] | data$Nucleotide==nucleotide[nt2]]
+desc=append(desc,paste(nucleotide[nt1]," vs ",nucleotide[nt2],sep=""))
+pval_nt_identity=append(pval_nt_identity,signif(summary(aov(y~nt*t))[[1]][1,5],digits=3)) # extracting p-values for nucleotide identity
+pval_interaction=append(pval_interaction,signif(summary(aov(y~nt*t))[[1]][3,5],digits=3)) # extracting p-values for the interaction between nucleotide identity and time
+}
+}
+output=list(desc,p.adjust(pval_nt_identity,method='fdr'),p.adjust(pval_interaction,method='fdr'))
+names(output)=c('Comparison','p-value nt identity','p-value interaction between nt identity and time')
+write.csv(as.data.frame(output),'Pairwise_comparisons_mature_RISC.csv')
+
+### Analysis of pre-RISC decrease kinetics (simplified as : [pre-RISC] = A*2^(-t/tau)+B with t: time (expressed in minutes) and tau=50 min (according to the aspect of the curves)
+variable=2^(-data$Time/50)
+c=aov(data$Pre_RISC~data$Nucleotide+variable)
+summary(c) # Conclusion: only time has a significant effect (hence it is pointless to look for an interaction term) on untransformed data
+# Applicability of ANOVA:
+leveneTest(data$Pre_RISC~data$Nucleotide*as.factor(data$Time)) # Variances appear to be homogeneous
+shapiro.test(residuals(c)) # Residuals do not appear to be normally distributed
+verification_desc=c('Levene test on untransformed data','Shapiro-Wilk test on residuals from untransformed data')
+verification_pval=c(signif(leveneTest(data$Pre_RISC~data$Nucleotide*as.factor(data$Time))$Pr[1],digits=3),signif(shapiro.test(residuals(c))$p.value,digits=3))
+transf=log(data$Pre_RISC)
+transf[!is.finite(transf)]=NA # Null and negative values are physically impossible: these are error measures (replaced by NA, not available)
+c=aov(transf~data$Nucleotide+variable)
+summary(c) # Conclusion: nucleotide identity has a significant effect, in log-transformed data
+d=aov(transf~data$Nucleotide*variable)
+summary(d) # Conclusion: a slightly significant interaction between nucleotide identity and time
+leveneTest(transf~data$Nucleotide*as.factor(data$Time)) # Variances appear to be homogeneous
+shapiro.test(residuals(d)) # Residuals are still hardly normally distributed after log-transformation (p-value=0.03829)
+verification_desc=append(verification_desc,c('Levene test on log-transformed data','Shapiro-Wilk test on residuals from log-transformed data'))
+verification_pval=append(verification_pval,c(signif(leveneTest(transf~data$Nucleotide*as.factor(data$Time))$Pr[1],digits=3),signif(shapiro.test(residuals(d))$p.value,digits=3)))
+verification=list(verification_desc,verification_pval)
+names(verification)=c('Statistical test','p-value')
+write.csv(as.data.frame(verification),'ANOVA_applicability_verification_Figure_2_pre-RISC.csv')
+
+# Pairwise tests:
+desc=c();pval_nt_identity=c();pval_interaction=c()
+for (nt1 in 1:(length(nucleotide)-1))
+{
+for (nt2 in (nt1+1):length(nucleotide))
+{
+y=data$Pre_RISC[data$Nucleotide==nucleotide[nt1] | data$Nucleotide==nucleotide[nt2]]
+nt=data$Nucleotide[data$Nucleotide==nucleotide[nt1] | data$Nucleotide==nucleotide[nt2]]
+t=variable[data$Nucleotide==nucleotide[nt1] | data$Nucleotide==nucleotide[nt2]]
+desc=append(desc,paste(nucleotide[nt1]," vs ",nucleotide[nt2],sep=""))
+pval_nt_identity=append(pval_nt_identity,signif(summary(aov(y~nt*t))[[1]][1,5],digits=3)) # extracting p-values for nucleotide identity
+pval_interaction=append(pval_interaction,signif(summary(aov(y~nt*t))[[1]][3,5],digits=3)) # extracting p-values for the interaction between nucleotide identity and time
+}
+}
+output=list(desc,p.adjust(pval_nt_identity,method='fdr'),p.adjust(pval_interaction,method='fdr'))
+names(output)=c('Comparison','p-value nt identity','p-value interaction between nt identity and time')
+write.csv(as.data.frame(output),'Pairwise_comparisons_pre_RISC.csv')
+
